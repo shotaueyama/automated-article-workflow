@@ -73,15 +73,18 @@ def improve_html_layout(html_content: str) -> str:
 
 5. **WordPressブロック互換性**
    - divタグやspanタグは最小限に抑制
+   - section、article、header、main、figureタグは除去
    - 複雑なCSSクラスは使用しない
-   - シンプルで標準的なHTMLタグを使用
+   - p、h2、h3、h4、ul、ol、li、img、strong、emのみ使用
 
 **重要な制約事項：**
 - 記事の内容・意味・情報は一切変更しない
 - 画像タグ（<img>）は絶対に削除・変更しない
 - 画像の順序や配置は維持する
 - 元の文章の表現や言い回しは保持する
-- WordPressのブロックエディタで崩れないシンプルな構造にする
+- section、article、header、main、figure、nav等の構造タグは完全に除去
+- WordPressブロックエディタで認識される最小限のタグのみ使用
+- 極めてシンプルなフラットな構造にする
 
 改善されたHTMLのみを返してください。説明やコメントは不要です。"""
 
@@ -90,12 +93,14 @@ def improve_html_layout(html_content: str) -> str:
 {html_content}
 
 **改善ポイント：**
-- WordPressブロックエディタでレイアウトが崩れないようシンプルな構造に
+- WordPressブロックエディタ専用の極めてシンプルな構造に変換
+- section、article、header、main、figure等の構造タグを完全除去
+- p、h2、h3、h4、img、strong、em、ul、ol、li、blockquoteのみ使用
 - 段落は適切な長さで<p>タグで明確に分割
 - 見出し階層を整理（h2→h3→h4の順序）
-- リストや強調は標準的なHTMLタグを使用
+- フラットで最小限のHTML構造
 
-記事の内容・意味・画像は絶対に変更せず、WordPressでの表示最適化のみ行ってください。"""
+記事の内容・意味・画像は絶対に変更せず、構造タグのみ除去してください。"""
 
         response = client.chat.completions.create(
             model="gpt-5-mini",
