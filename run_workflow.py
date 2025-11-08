@@ -474,9 +474,9 @@ def step_convert_to_html(article_id: int, log: Dict) -> None:
 
 
 def step_improve_html_layout(article_id: int, log: Dict) -> None:
-    """GPT-5-miniを使用してHTMLレイアウトと読みやすさを改善"""
-    print_status("✨ STEP 4.5: HTML読みやすさ改善を開始", "IMPROVE")
-    print_status(f"🎨 記事ID {article_id} のHTMLレイアウトを改善中")
+    """GPT-5-miniを使用してWordPressブロックエディタ向けHTMLレイアウト最適化"""
+    print_status("✨ STEP 4.5: WordPress向けHTML最適化を開始", "IMPROVE")
+    print_status(f"🎨 記事ID {article_id} をWordPressブロックエディタ向けに最適化中")
     
     html_path = REPO_ROOT / "articles" / str(article_id) / "article.html"
     
@@ -497,8 +497,8 @@ def step_improve_html_layout(article_id: int, log: Dict) -> None:
             body_content = body_match.group(1).strip()
             print_status("🔍 body要素からコンテンツを抽出")
             
-            # GPT-5-miniでレイアウトを改善
-            print_status("🤖 GPT-5-miniでレイアウト改善中...")
+            # GPT-5-miniでWordPressブロックエディタ向けに最適化
+            print_status("🤖 GPT-5-miniでWordPressブロック最適化中...")
             improved_body_content = improve_html_layout(body_content)
             
             # 改善されたコンテンツでHTMLを再構成
@@ -507,17 +507,17 @@ def step_improve_html_layout(article_id: int, log: Dict) -> None:
             # 改善されたHTMLを保存
             html_path.write_text(improved_html, encoding="utf-8")
             
-            print_status(f"✅ HTMLレイアウト改善完了")
-            print_status(f"📊 改善前: {len(body_content)}文字 → 改善後: {len(improved_body_content)}文字")
+            print_status(f"✅ WordPressブロック最適化完了")
+            print_status(f"📊 最適化前: {len(body_content)}文字 → 最適化後: {len(improved_body_content)}文字")
             
-            log_step(log, "improve_html_layout", "success", f"レイアウト改善完了: {html_path.name}")
+            log_step(log, "improve_html_layout", "success", f"WordPress最適化完了: {html_path.name}")
         else:
             print_status("⚠️ bodyタグが見つかりません", "WARNING")
             log_step(log, "improve_html_layout", "skipped", "body tag not found")
         
     except Exception as e:
-        print_status(f"⚠️ HTML改善中にエラー: {str(e)}", "WARNING")
-        log_step(log, "improve_html_layout", "error", f"レイアウト改善エラー: {str(e)}")
+        print_status(f"⚠️ WordPress最適化中にエラー: {str(e)}", "WARNING")
+        log_step(log, "improve_html_layout", "error", f"WordPress最適化エラー: {str(e)}")
         # エラーが発生しても処理は継続する
 
 
