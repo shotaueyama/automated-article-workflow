@@ -473,6 +473,54 @@ def step_convert_to_html(article_id: int, log: Dict) -> None:
         fail_and_exit(log, "convert_to_html", str(e), f"HTML変換に失敗: {str(e)}")
 
 
+def step_improve_html_layout(article_id: int, log: Dict) -> None:
+    """GPT-5-miniを使用してHTMLレイアウトと読みやすさを改善"""
+    print_status("✨ STEP 4.5: HTML読みやすさ改善を開始", "IMPROVE")
+    print_status(f"🎨 記事ID {article_id} のHTMLレイアウトを改善中")
+    
+    html_path = REPO_ROOT / "articles" / str(article_id) / "article.html"
+    
+    if not html_path.exists():
+        fail_and_exit(log, "improve_html_layout", "", f"{html_path} not found.")
+    
+    try:
+        from tools.improve_html_layout import improve_html_layout
+        
+        # 元のHTMLを読み込み
+        original_html = html_path.read_text(encoding="utf-8")
+        print_status(f"📖 元のHTML読み込み完了: {len(original_html)}文字")
+        
+        # bodyタグ内のコンテンツのみを抽出してGPTで改善
+        import re
+        body_match = re.search(r'<body>(.*?)</body>', original_html, re.DOTALL)
+        if body_match:
+            body_content = body_match.group(1).strip()
+            print_status("🔍 body要素からコンテンツを抽出")
+            
+            # GPT-5-miniでレイアウトを改善
+            print_status("🤖 GPT-5-miniでレイアウト改善中...")
+            improved_body_content = improve_html_layout(body_content)
+            
+            # 改善されたコンテンツでHTMLを再構成
+            improved_html = original_html.replace(body_content, improved_body_content)
+            
+            # 改善されたHTMLを保存
+            html_path.write_text(improved_html, encoding="utf-8")
+            
+            print_status(f"✅ HTMLレイアウト改善完了")
+            print_status(f"📊 改善前: {len(body_content)}文字 → 改善後: {len(improved_body_content)}文字")
+            
+            log_step(log, "improve_html_layout", "success", f"レイアウト改善完了: {html_path.name}")
+        else:
+            print_status("⚠️ bodyタグが見つかりません", "WARNING")
+            log_step(log, "improve_html_layout", "skipped", "body tag not found")
+        
+    except Exception as e:
+        print_status(f"⚠️ HTML改善中にエラー: {str(e)}", "WARNING")
+        log_step(log, "improve_html_layout", "error", f"レイアウト改善エラー: {str(e)}")
+        # エラーが発生しても処理は継続する
+
+
 def step_upload(article_id: int, args: argparse.Namespace, log: Dict) -> None:
     print_status("🌐 STEP 5: WordPressアップロードを開始", "UPLOAD")
     print_status(f"📤 記事ID {article_id} をWordPressに投稿中")
@@ -541,6 +589,7 @@ def main() -> None:
         # 既存のarticle.mdから画像生成を開始
         step_generate_images(article_id, log)
         step_convert_to_html(article_id, log)
+        step_improve_html_layout(article_id, log)
         step_upload(article_id, args, log)
         
         print_status(f"✅ 画像生成ワークフロー完了: 記事ID {article_id}", "RESUME")
@@ -572,6 +621,7 @@ def main() -> None:
         step_generate_article(article_id, log)
         step_generate_images(article_id, log)
         step_convert_to_html(article_id, log)
+        step_improve_html_layout(article_id, log)
         step_upload(article_id, args, log)
         
         print_status(f"✅ 再開ワークフロー完了: 記事ID {article_id}", "RESUME")
@@ -595,6 +645,7 @@ def main() -> None:
         step_generate_article(article_id, log)
         step_generate_images(article_id, log)
         step_convert_to_html(article_id, log)
+        step_improve_html_layout(article_id, log)
         step_upload(article_id, args, log)
 
         print_status(f"✅ ワークフロー完了: 記事ID {article_id}", "COMPLETE")

@@ -287,8 +287,24 @@ def main() -> int:
 
     markdown_text = article_path.read_text(encoding="utf-8")
     title = None if args.skip_title else extract_title(markdown_text)
-    markdown_body = remove_leading_title(markdown_text)
-    html_content = convert_markdown_to_html(markdown_body)
+    
+    # 既存の改善済みHTMLファイルがある場合はそれを使用
+    html_path = article_path.parent / "article.html"
+    if html_path.exists():
+        print(f"Using existing HTML file: {html_path}")
+        full_html = html_path.read_text(encoding="utf-8")
+        # HTMLファイルからbody部分を抽出
+        soup = BeautifulSoup(full_html, "html.parser")
+        body_tag = soup.find("body")
+        if body_tag:
+            html_content = str(body_tag.decode_contents())
+        else:
+            # bodyタグがない場合はそのまま使用
+            html_content = full_html
+    else:
+        print("No HTML file found, converting from Markdown...")
+        markdown_body = remove_leading_title(markdown_text)
+        html_content = convert_markdown_to_html(markdown_body)
 
     images = find_local_images(markdown_text, article_path)
     uploader = WordPressUploader(base_url=wp_base, username=wp_user, password=wp_pass)
