@@ -13,6 +13,7 @@ GPT-5-miniを使用してHTML記事をWordPressブロックエディタ（Gutenb
 
 import sys
 import argparse
+import re
 from pathlib import Path
 from openai import OpenAI
 import os
@@ -26,6 +27,35 @@ def log_info(message: str):
 def log_error(message: str):
     """エラーログを出力"""
     print(f"[ERROR] improve_html: {message}")
+
+
+def fix_broken_html_tags(html_content: str) -> str:
+    """
+    破損したHTMLタグを自動修正する
+    
+    Args:
+        html_content (str): 修正対象のHTML内容
+        
+    Returns:
+        str: 修正されたHTML内容
+    """
+    # 破損したstrongタグを修正 (例: </strong、 -> </strong>、)
+    html_content = re.sub(r'</strong、', '</strong>、', html_content)
+    html_content = re.sub(r'</strong。', '</strong>。', html_content)
+    html_content = re.sub(r'</strong！', '</strong>！', html_content)
+    html_content = re.sub(r'</strong？', '</strong>？', html_content)
+    
+    # 破損したemタグを修正
+    html_content = re.sub(r'</em、', '</em>、', html_content)
+    html_content = re.sub(r'</em。', '</em>。', html_content)
+    html_content = re.sub(r'</em！', '</em>！', html_content)
+    html_content = re.sub(r'</em？', '</em>？', html_content)
+    
+    # その他の一般的な破損パターン
+    html_content = re.sub(r'</h([1-6])、', r'</h\1>、', html_content)
+    html_content = re.sub(r'</h([1-6])。', r'</h\1>。', html_content)
+    
+    return html_content
 
 
 def improve_html_layout(html_content: str) -> str:
@@ -44,6 +74,10 @@ def improve_html_layout(html_content: str) -> str:
         return html_content
     
     try:
+        # まず破損したHTMLタグを修正
+        log_info("破損したHTMLタグを修正中...")
+        html_content = fix_broken_html_tags(html_content)
+        
         client = OpenAI(api_key=api_key)
         log_info("HTMLレイアウト改善を開始...")
         
@@ -86,6 +120,7 @@ def improve_html_layout(html_content: str) -> str:
 - WordPressブロックエディタで認識される最小限のタグのみ使用
 - 極めてシンプルなフラットな構造にする
 - 画像のalt属性から不要な##記号を除去してクリーンにする
+- 破損したHTMLタグ（例：<strong>text</strong、）を自動修正する
 
 改善されたHTMLのみを返してください。説明やコメントは不要です。"""
 
@@ -101,8 +136,9 @@ def improve_html_layout(html_content: str) -> str:
 - 見出し階層を整理（h2→h3→h4の順序）
 - フラットで最小限のHTML構造
 - 画像のalt属性から不要な##記号を除去
+- 破損したHTMLタグの自動修正（例：<strong>text</strong、 → <strong>text</strong>）
 
-記事の内容・意味・画像は絶対に変更せず、構造タグ除去とalt属性クリーニングのみ行ってください。"""
+記事の内容・意味・画像は絶対に変更せず、構造最適化とHTMLタグ修正のみ行ってください。"""
 
         response = client.chat.completions.create(
             model="gpt-5-mini",
@@ -120,6 +156,10 @@ def improve_html_layout(html_content: str) -> str:
         if not improved_html or len(improved_html) < 100:
             log_error("改善されたHTMLが短すぎます。元のHTMLを返します")
             return html_content
+        
+        # 最終的に再度HTMLタグ修正を実行
+        log_info("最終HTMLタグ修正を実行中...")
+        improved_html = fix_broken_html_tags(improved_html)
             
         return improved_html
         
