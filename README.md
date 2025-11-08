@@ -7,6 +7,7 @@ AI駆動型の記事生成、画像作成、WordPress自動投稿システム
 ✨ **完全自動化ワークフロー**
 - ディープリサーチからWordPress投稿まで一貫した処理
 - OpenAI GPT-5 mini + DALL-E 3を活用した高品質コンテンツ生成
+- GPT-5 mini自動レビュー機能による品質向上
 - リアルタイム進行状況監視
 
 📊 **監視・管理機能**
@@ -22,11 +23,12 @@ AI駆動型の記事生成、画像作成、WordPress自動投稿システム
 📝 **記事品質**
 - 自然な日本語文章生成（3200-3800文字保証）
 - リスト使用最小化、人間らしい表現
-- Markdown → HTML変換によるプレビュー機能
+- 直接HTML生成によるWordPress最適化
+- GPT-5 mini自動レビューによる品質向上と修正
 
 🔄 **再実行機能**
 - material.mdからの記事再生成
-- article.mdからの画像生成再開
+- article.html（優先）またはarticle.mdからの画像生成再開
 - ワークフロー中断時の柔軟な再開
 
 🚀 **WordPress統合**
@@ -78,7 +80,7 @@ AI駆動型の記事生成、画像作成、WordPress自動投稿システム
 
 ### 再実行機能
 - **記事再生成**: material.mdから記事作成を再開
-- **画像生成再開**: article.mdから画像生成を再開
+- **画像生成再開**: article.html（優先）またはarticle.mdから画像生成を再開
 
 ### 手動実行
 ```bash
@@ -96,7 +98,7 @@ python run_workflow.py --resume-from-images articles/1
 ├── workflow_monitor.py     # 監視UI
 ├── run_workflow.py         # ワークフロー実行エンジン
 ├── tools/
-│   ├── generate_article_from_material.py  # 記事生成
+│   ├── generate_html_from_material.py      # HTML記事生成（レビュー付き）
 │   ├── generate_image.py                   # 画像生成
 │   └── upload_to_wordpress.py              # WordPress投稿
 ├── guides/                 # 詳細ガイド
@@ -107,10 +109,10 @@ python run_workflow.py --resume-from-images articles/1
 
 ## ワークフロー詳細
 
-1. **ディープリサーチ** - GPT-5によるテーマ調査（material.md生成）
-2. **記事生成** - 自然な日本語記事作成（article.md生成）
-3. **画像生成** - DALL-E 3による多様な画像作成
-4. **HTML変換** - プレビュー用HTML生成
+1. **ディープリサーチ** - OpenAI o3-deep-researchによるテーマ調査（material.md生成）
+2. **HTML記事生成** - GPT-5 mini による自然な日本語記事作成（article.html生成）
+3. **品質レビュー** - GPT-5 mini による記事の自動レビュー・修正
+4. **画像生成** - DALL-E 3による多様な画像作成と記事への自動挿入
 5. **WordPress投稿** - 自動アップロードと投稿
 
 ## トラブルシューティング

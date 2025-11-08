@@ -19,7 +19,6 @@ except ImportError:
 
 REPO_ROOT = Path(__file__).resolve().parent
 LOG_DIR = REPO_ROOT / "logs" / "workflow_runs"
-GENERATED_IMAGES_DIR = REPO_ROOT / "generated-images"
 
 
 def parse_args() -> argparse.Namespace:
@@ -284,43 +283,54 @@ def step_deep_research(args: argparse.Namespace, log: Dict) -> int:
 
 
 def step_generate_article(article_id: int, log: Dict) -> None:
-    print_status("✍️ STEP 2: 記事生成を開始", "GENERATE")
-    print_status(f"📄 記事ID {article_id} の記事を生成中")
+    print_status("✍️ STEP 2: HTML記事生成・レビューを開始", "GENERATE")
+    print_status(f"📄 記事ID {article_id} のHTML記事を直接生成中（GPT-5 mini レビュー付き）")
     
     material_path = REPO_ROOT / "articles" / str(article_id) / "material.md"
-    output_path = REPO_ROOT / "articles" / str(article_id) / "article.md"
+    output_path = REPO_ROOT / "articles" / str(article_id) / "article.html"
     cmd = [
         sys.executable,
-        "tools/generate_article_from_material.py",
+        "tools/generate_html_from_material.py",
         "--material",
         str(material_path),
         "--output",
         str(output_path),
     ]
     
-    print_api_log("REQUEST", "OpenAI GPT-5 miniで記事生成処理を開始")
+    print_api_log("REQUEST", "OpenAI GPT-5 miniでHTML記事生成処理を開始")
     code, stdout, stderr = run_command(cmd, REPO_ROOT)
     
     if code != 0:
-        print_api_log("FAILED", f"記事生成エラー: {stderr.strip()}")
+        print_api_log("FAILED", f"HTML記事生成エラー: {stderr.strip()}")
         fail_and_exit(
             log,
             "generate_article",
             stdout.strip(),
-            stderr.strip() or "Article generation failed.",
+            stderr.strip() or "HTML article generation failed.",
         )
     
-    print_api_log("SUCCESS", f"記事生成完了 - 出力: {output_path.name}")
-    print_status(f"✅ STEP 2完了: 記事を {output_path.name} に生成", "GENERATE")
+    print_api_log("SUCCESS", f"HTML記事生成・レビュー完了 - 出力: {output_path.name}")
+    print_status(f"✅ STEP 2完了: HTML記事を {output_path.name} に生成（レビュー済み）", "GENERATE")
     log_step(log, "generate_article", "success", str(output_path.relative_to(REPO_ROOT)))
 
 
 def extract_headings(article_path: Path) -> List[str]:
     headings: List[str] = []
-    for line in article_path.read_text(encoding="utf-8").splitlines():
-        line = line.rstrip()
-        if line.startswith("## "):
-            headings.append(line.strip())
+    content = article_path.read_text(encoding="utf-8")
+    
+    # HTMLファイルの場合はHTMLタグから見出しを抽出
+    if article_path.suffix == ".html":
+        import re
+        h2_matches = re.findall(r'<h2>(.*?)</h2>', content)
+        for heading in h2_matches:
+            headings.append(f"## {heading}")
+    else:
+        # Markdownファイルの場合は従来の方法
+        for line in content.splitlines():
+            line = line.rstrip()
+            if line.startswith("## "):
+                headings.append(line.strip())
+    
     return headings
 
 
@@ -330,32 +340,54 @@ def slugify(text: str) -> str:
     return text or "section"
 
 
-def insert_image_markdown(article_path: Path, heading: str, relative_path: str) -> None:
-    lines = article_path.read_text(encoding="utf-8").splitlines()
-    for idx, line in enumerate(lines):
-        if line.strip() == heading.strip():
-            insert_idx = idx + 1
-            while insert_idx < len(lines) and lines[insert_idx].strip() == "":
-                insert_idx += 1
-            if insert_idx < len(lines) and lines[insert_idx].lstrip().startswith("!"):
+def insert_image_html(article_path: Path, heading: str, relative_path: str) -> None:
+    content = article_path.read_text(encoding="utf-8")
+    
+    if article_path.suffix == ".html":
+        # HTMLファイルの場合
+        import re
+        # 見出しタグを探してその後に画像タグを挿入
+        pattern = f'<h2>{re.escape(heading.replace("## ", ""))}</h2>'
+        if re.search(pattern, content):
+            # 既に画像が挿入されているかチェック
+            next_image_pattern = f'{pattern}\\s*<img[^>]*src="{re.escape(relative_path)}"'
+            if not re.search(next_image_pattern, content):
+                alt_text = f"{heading.replace('## ', '')}のイメージ"
+                image_tag = f'<img src="{relative_path}" alt="{alt_text}" />'
+                replacement = f'<h2>{heading.replace("## ", "")}</h2>\n{image_tag}'
+                content = re.sub(pattern, replacement, content, count=1)
+                article_path.write_text(content, encoding="utf-8")
+    else:
+        # Markdownファイルの場合（従来の方法）
+        lines = content.splitlines()
+        for idx, line in enumerate(lines):
+            if line.strip() == heading.strip():
+                insert_idx = idx + 1
+                while insert_idx < len(lines) and lines[insert_idx].strip() == "":
+                    insert_idx += 1
+                if insert_idx < len(lines) and lines[insert_idx].lstrip().startswith("!"):
+                    return
+                snippet = [
+                    "",
+                    f"![{heading}のイメージ]({relative_path})",
+                    "",
+                ]
+                lines[idx + 1 : idx + 1] = snippet
+                article_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
                 return
-            snippet = [
-                "",
-                f"![{heading}のイメージ]({relative_path})",
-                "",
-            ]
-            lines[idx + 1 : idx + 1] = snippet
-            article_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            return
 
 
 def step_generate_images(article_id: int, log: Dict) -> None:
     print_status("🎨 STEP 3: 画像生成を開始", "IMAGES")
     print_status(f"🖼️ 記事ID {article_id} の画像を生成中")
     
-    article_path = REPO_ROOT / "articles" / str(article_id) / "article.md"
+    # HTMLファイルを優先的に使用
+    article_path = REPO_ROOT / "articles" / str(article_id) / "article.html"
     if not article_path.exists():
-        fail_and_exit(log, "generate_images", "", f"{article_path} not found.")
+        # HTMLファイルが存在しない場合はMarkdownファイルを使用
+        article_path = REPO_ROOT / "articles" / str(article_id) / "article.md"
+        if not article_path.exists():
+            fail_and_exit(log, "generate_images", "", f"Neither article.html nor article.md found for article {article_id}.")
 
     headings = extract_headings(article_path)
     if not headings:
@@ -364,7 +396,6 @@ def step_generate_images(article_id: int, log: Dict) -> None:
         return
 
     print_status(f"📝 {len(headings)}個の見出しに対して画像を生成します")
-    GENERATED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     created_files: List[str] = []
     generated_prompts: List[str] = []  # 生成済みプロンプトを記録
 
@@ -407,7 +438,7 @@ def step_generate_images(article_id: int, log: Dict) -> None:
             
         print_api_log("SUCCESS", f"画像生成完了: {filename}.png")
         relative_path = Path("images") / image_path.name
-        insert_image_markdown(article_path, heading, str(relative_path))
+        insert_image_html(article_path, heading, str(relative_path))
         created_files.append(str(image_path.relative_to(REPO_ROOT)))
 
     print_status(f"✅ STEP 3完了: {len(created_files)}個の画像を生成", "IMAGES")
@@ -415,133 +446,49 @@ def step_generate_images(article_id: int, log: Dict) -> None:
     log_step(log, "generate_images", "success", detail or "Images already existed.")
 
 
-def step_convert_to_html(article_id: int, log: Dict) -> None:
-    """記事をMarkdownからHTMLに変換"""
-    print_status("📄 STEP 4: HTML変換を開始", "CONVERT")
-    print_status(f"🔄 記事ID {article_id} をHTMLに変換中")
-    
-    article_path = REPO_ROOT / "articles" / str(article_id) / "article.md"
-    html_path = REPO_ROOT / "articles" / str(article_id) / "article.html"
-    
-    if not article_path.exists():
-        fail_and_exit(log, "convert_to_html", "", f"{article_path} not found.")
-    
-    try:
-        import markdown
-        
-        # Markdownファイルを読み込み
-        markdown_content = article_path.read_text(encoding="utf-8")
-        print_status(f"📖 Markdown読み込み完了: {len(markdown_content)}文字")
-        
-        # HTMLに変換 (拡張機能付き)
-        html_content = markdown.markdown(
-            markdown_content, 
-            extensions=['extra', 'codehilite', 'toc']
-        )
-        
-        # HTMLファイルとして保存
-        html_template = f"""<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>記事プレビュー</title>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; line-height: 1.6; }}
-        img {{ max-width: 100%; height: auto; }}
-        h1, h2, h3 {{ color: #333; }}
-        pre {{ background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto; }}
-        blockquote {{ border-left: 4px solid #ddd; margin: 0; padding-left: 1rem; color: #666; }}
-    </style>
-</head>
-<body>
-{html_content}
-</body>
-</html>"""
-        
-        html_path.write_text(html_template, encoding="utf-8")
-        
-        print_status(f"✅ HTML変換完了: {html_path.name}")
-        print_status(f"🔗 プレビュー: file://{html_path}")
-        
-        log_step(log, "convert_to_html", "success", str(html_path.relative_to(REPO_ROOT)))
-        
-    except ImportError:
-        print_status("⚠️ markdownライブラリが見つかりません、変換をスキップ", "WARNING")
-        log_step(log, "convert_to_html", "skipped", "markdown library not available")
-    except Exception as e:
-        fail_and_exit(log, "convert_to_html", str(e), f"HTML変換に失敗: {str(e)}")
-
-
-def step_improve_html_layout(article_id: int, log: Dict) -> None:
-    """GPT-5-miniを使用してWordPressブロックエディタ向けHTMLレイアウト最適化"""
-    print_status("✨ STEP 4.5: WordPress向けHTML最適化を開始", "IMPROVE")
-    print_status(f"🎨 記事ID {article_id} をWordPressブロックエディタ向けに最適化中")
-    
-    html_path = REPO_ROOT / "articles" / str(article_id) / "article.html"
-    
-    if not html_path.exists():
-        fail_and_exit(log, "improve_html_layout", "", f"{html_path} not found.")
-    
-    try:
-        from tools.improve_html_layout import improve_html_layout
-        
-        # 元のHTMLを読み込み
-        original_html = html_path.read_text(encoding="utf-8")
-        print_status(f"📖 元のHTML読み込み完了: {len(original_html)}文字")
-        
-        # bodyタグ内のコンテンツのみを抽出してGPTで改善
-        import re
-        body_match = re.search(r'<body>(.*?)</body>', original_html, re.DOTALL)
-        if body_match:
-            body_content = body_match.group(1).strip()
-            print_status("🔍 body要素からコンテンツを抽出")
-            
-            # GPT-5-miniでWordPressブロックエディタ向けに最適化
-            print_status("🤖 GPT-5-miniでWordPressブロック最適化中...")
-            improved_body_content = improve_html_layout(body_content)
-            
-            # 改善されたコンテンツでHTMLを再構成
-            improved_html = original_html.replace(body_content, improved_body_content)
-            
-            # 改善されたHTMLを保存
-            html_path.write_text(improved_html, encoding="utf-8")
-            
-            print_status(f"✅ WordPressブロック最適化完了")
-            print_status(f"📊 最適化前: {len(body_content)}文字 → 最適化後: {len(improved_body_content)}文字")
-            
-            log_step(log, "improve_html_layout", "success", f"WordPress最適化完了: {html_path.name}")
-        else:
-            print_status("⚠️ bodyタグが見つかりません", "WARNING")
-            log_step(log, "improve_html_layout", "skipped", "body tag not found")
-        
-    except Exception as e:
-        print_status(f"⚠️ WordPress最適化中にエラー: {str(e)}", "WARNING")
-        log_step(log, "improve_html_layout", "error", f"WordPress最適化エラー: {str(e)}")
-        # エラーが発生しても処理は継続する
 
 
 def step_upload(article_id: int, args: argparse.Namespace, log: Dict) -> None:
-    print_status("🌐 STEP 5: WordPressアップロードを開始", "UPLOAD")
+    print_status("🌐 STEP 4: WordPressアップロードを開始", "UPLOAD")
     print_status(f"📤 記事ID {article_id} をWordPressに投稿中")
     
-    article_path = REPO_ROOT / "articles" / str(article_id) / "article.md"
-    if not article_path.exists():
-        fail_and_exit(log, "upload_wordpress", "", f"{article_path} not found.")
+    # HTMLファイルを優先的に使用
+    html_path = REPO_ROOT / "articles" / str(article_id) / "article.html"
+    if html_path.exists():
+        print_status(f"📋 HTMLファイルを使用: {html_path.name}")
+        cmd = [
+            sys.executable,
+            "tools/upload_to_wordpress.py",
+            "--html",
+            str(html_path),
+            "--status",
+            args.status,
+            "--category-name",
+            args.category_name,
+            "--parent-category",
+            args.parent_category,
+        ]
+    else:
+        # HTMLファイルが存在しない場合はMarkdownファイルを使用
+        article_path = REPO_ROOT / "articles" / str(article_id) / "article.md"
+        if not article_path.exists():
+            fail_and_exit(log, "upload_wordpress", "", f"Neither article.html nor article.md found for article {article_id}.")
+        
+        print_status(f"📋 Markdownファイルを使用: {article_path.name}")
+        cmd = [
+            sys.executable,
+            "tools/upload_to_wordpress.py",
+            "--markdown",
+            str(article_path),
+            "--status",
+            args.status,
+            "--category-name",
+            args.category_name,
+            "--parent-category",
+            args.parent_category,
+        ]
         
     print_status(f"📋 設定: status={args.status}, category={args.category_name}")
-    cmd = [
-        sys.executable,
-        "tools/upload_to_wordpress.py",
-        "--markdown",
-        str(article_path),
-        "--status",
-        args.status,
-        "--category-name",
-        args.category_name,
-        "--parent-category",
-        args.parent_category,
-    ]
     
     print_api_log("REQUEST", f"WordPress APIで投稿開始 (status: {args.status})")
     code, stdout, stderr = run_command(cmd, REPO_ROOT)
@@ -556,7 +503,7 @@ def step_upload(article_id: int, args: argparse.Namespace, log: Dict) -> None:
         )
     
     print_api_log("SUCCESS", f"WordPress投稿完了")
-    print_status("✅ STEP 5完了: WordPressに正常に投稿されました", "UPLOAD")
+    print_status("✅ STEP 4完了: WordPressに正常に投稿されました", "UPLOAD")
     log_step(log, "upload_wordpress", "success", stdout.strip())
 
 
@@ -567,10 +514,17 @@ def main() -> None:
     # 画像生成からの再開モード
     if args.resume_from_images:
         article_id = args.resume_from_images
-        article_path = REPO_ROOT / "articles" / str(article_id) / "article.md"
         
-        if not article_path.exists():
-            raise SystemExit(f"Article file not found: {article_path}")
+        # HTMLファイルを優先的にチェック
+        html_path = REPO_ROOT / "articles" / str(article_id) / "article.html"
+        md_path = REPO_ROOT / "articles" / str(article_id) / "article.md"
+        
+        if html_path.exists():
+            article_path = html_path
+        elif md_path.exists():
+            article_path = md_path
+        else:
+            raise SystemExit(f"Neither article.html nor article.md found for article {article_id}")
         
         log: Dict = {
             "run_id": run_id,
@@ -588,8 +542,6 @@ def main() -> None:
         
         # 既存のarticle.mdから画像生成を開始
         step_generate_images(article_id, log)
-        step_convert_to_html(article_id, log)
-        step_improve_html_layout(article_id, log)
         step_upload(article_id, args, log)
         
         print_status(f"✅ 画像生成ワークフロー完了: 記事ID {article_id}", "RESUME")
@@ -620,8 +572,6 @@ def main() -> None:
         # 既存のmaterial.mdから記事生成を開始
         step_generate_article(article_id, log)
         step_generate_images(article_id, log)
-        step_convert_to_html(article_id, log)
-        step_improve_html_layout(article_id, log)
         step_upload(article_id, args, log)
         
         print_status(f"✅ 再開ワークフロー完了: 記事ID {article_id}", "RESUME")
@@ -644,8 +594,6 @@ def main() -> None:
         article_id = step_deep_research(args, log)
         step_generate_article(article_id, log)
         step_generate_images(article_id, log)
-        step_convert_to_html(article_id, log)
-        step_improve_html_layout(article_id, log)
         step_upload(article_id, args, log)
 
         print_status(f"✅ ワークフロー完了: 記事ID {article_id}", "COMPLETE")

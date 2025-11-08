@@ -295,7 +295,7 @@ async def analyze_run(run_id: str):
 
 @app.get("/articles/completed")
 async def list_completed_articles():
-    """article.mdが存在するフォルダを一覧取得（画像生成から再開用）"""
+    """article.html（優先）またはarticle.mdが存在するフォルダを一覧取得（画像生成から再開用）"""
     articles_root = REPO_ROOT / "articles"
     if not articles_root.exists():
         return []
@@ -305,22 +305,43 @@ async def list_completed_articles():
         if not folder.is_dir() or not folder.name.isdigit():
             continue
             
-        article_path = folder / "article.md"
+        # HTMLファイルを優先的にチェック
+        html_path = folder / "article.html"
+        md_path = folder / "article.md"
         
-        # article.mdが存在する場合
-        if article_path.exists():
+        article_path = None
+        if html_path.exists():
+            article_path = html_path
+        elif md_path.exists():
+            article_path = md_path
+        
+        # article.html または article.md が存在する場合
+        if article_path:
             try:
                 article_content = article_path.read_text(encoding="utf-8")
-                # 最初の見出しをタイトルとして抽出
-                lines = article_content.split('\n')
+                # タイトル抽出（HTMLとMarkdownに対応）
                 title = "記事タイトル未設定"
-                for line in lines:
-                    if line.startswith('# '):
-                        title = line[2:].strip()
-                        break
-                    elif line.startswith('## '):
-                        title = line[3:].strip()
-                        break
+                
+                if article_path.suffix == ".html":
+                    # HTMLファイルの場合
+                    import re
+                    h1_match = re.search(r'<h1>(.*?)</h1>', article_content)
+                    if h1_match:
+                        title = h1_match.group(1).strip()
+                    else:
+                        h2_match = re.search(r'<h2>(.*?)</h2>', article_content)
+                        if h2_match:
+                            title = h2_match.group(1).strip()
+                else:
+                    # Markdownファイルの場合
+                    lines = article_content.split('\n')
+                    for line in lines:
+                        if line.startswith('# '):
+                            title = line[2:].strip()
+                            break
+                        elif line.startswith('## '):
+                            title = line[3:].strip()
+                            break
                 
                 preview = article_content[:200] + "..." if len(article_content) > 200 else article_content
                 
@@ -388,16 +409,25 @@ async def list_material_only_folders():
 
 @app.post("/workflow/resume-images")
 async def resume_workflow_from_images(request: dict):
-    """article.mdから画像生成を再開"""
+    """article.html（優先）またはarticle.mdから画像生成を再開"""
     article_id = request.get("article_id")
     if not article_id:
         raise HTTPException(status_code=400, detail="article_id is required")
     
     article_folder = REPO_ROOT / "articles" / str(article_id)
-    article_path = article_folder / "article.md"
     
-    if not article_path.exists():
-        raise HTTPException(status_code=404, detail=f"article.md not found in article {article_id}")
+    # HTMLファイルを優先的にチェック
+    html_path = article_folder / "article.html"
+    md_path = article_folder / "article.md"
+    
+    article_path = None
+    if html_path.exists():
+        article_path = html_path
+    elif md_path.exists():
+        article_path = md_path
+    
+    if not article_path:
+        raise HTTPException(status_code=404, detail=f"Neither article.html nor article.md found in article {article_id}")
     
     # 新しいrun_idを生成
     run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")

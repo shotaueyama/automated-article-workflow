@@ -7,7 +7,6 @@ import os
 import datetime as dt
 from pathlib import Path
 from typing import List
-import re
 
 import requests
 import json
@@ -59,28 +58,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_material(path: Path) -> str:
-    if not path.exists():
-        raise SystemExit(f"Material file not found: {path}")
-    return path.read_text(encoding="utf-8").strip()
-
-
-
-
-
-
-def extract_title_from_material(material: str) -> str:
-    """リサーチメモから最初の#タイトルを抽出"""
-    lines = material.split('\n')
-    for line in lines:
-        if line.startswith('# ') and 'Research Notes' not in line:
-            # '# ' を除去してタイトル部分のみを取得
-            title = line.strip('# ').strip()
-            # ' – ' でリサーチメモタイトルを分割して前半を取得
-            if ' – ' in title:
-                return title.split(' – ')[0].strip()
-            return title
-    return "記事タイトル"  # デフォルト
+def count_japanese_chars(text: str) -> int:
+    """日本語文字数をカウント（ひらがな・カタカナ・漢字・数字・英字・記号等）"""
+    # HTML タグを除去してから文字数カウント
+    import re
+    clean_text = re.sub(r'<[^>]+>', '', text)
+    return len(clean_text.replace(" ", "").replace("\n", ""))
 
 
 def generate_article_with_openai(material: str, model: str) -> str:
@@ -100,8 +83,8 @@ def generate_article_with_openai(material: str, model: str) -> str:
 以下の制約に従って、WordPressブロックエディタで完璧に表示される高品質なHTML記事を生成してください：
 
 【WordPressブロック対応HTML構造】
-- h1、p、h2、h3、h4、img、strong、em、ul、ol、li、blockquoteタグのみ使用
-- section、article、header、main、figure、divタグは一切使用禁止
+- p、h2、h3、h4、img、strong、em、ul、ol、liタグのみ使用
+- section、article、header、main、figure、div、blockquoteタグは一切使用禁止
 - 極めてシンプルでフラットなHTML構造
 
 【記事品質要件】
@@ -112,12 +95,13 @@ def generate_article_with_openai(material: str, model: str) -> str:
 - 流れるような文章で情報を伝える物語調のスタイル
 
 【HTML構造ルール】
-- 記事冒頭は必ずh1タグでメインタイトルを配置
-- 見出し階層：h1（メインタイトル）→ h2（主要セクション）→ h3（サブセクション）→ h4
+- 記事は必ずh1タグで始まる（記事タイトル用、WordPressアップロード時に抽出される）
+- 見出し階層：h1（記事タイトル）→ h2（主要セクション）→ h3（サブセクション）→ h4
 - 段落は150-200文字目安で適切に分割
-- 画像は段落間に適切に配置
+- 画像タグ使用禁止（画像は後で自動生成・挿入されるため、imgタグは含めない）
 - 強調は<strong>、軽い強調は<em>を使用
 - リストが必要な場合のみ<ul><li>を使用
+- blockquoteタグは使用禁止（WordPressブロックエディタ互換性のため）
 
 【重要な注意事項】
 - HTMLのみを出力（説明や前置きは不要）
@@ -125,23 +109,21 @@ def generate_article_with_openai(material: str, model: str) -> str:
 - 各セクションは具体例や詳細説明を豊富に含む
 - 読者が自然に理解できる構成"""
 
-    # リサーチメモからタイトルを抽出
-    article_title = extract_title_from_material(material)
-    
     user_prompt = f"""以下のリサーチメモを踏まえて、WordPressブロックエディタ向けの日本語HTML記事を生成してください。
 
 【重要な要求】
+- **必ずh1タグでタイトルから開始する**（WordPressアップロード時に抽出されます）
 - **必ず3200〜3800文字（理想は3500文字）**の日本語HTML記事
+- **blockquoteタグは使用禁止**（WordPress互換性問題のため）
+- **imgタグのsrcにはプレースホルダーURL禁止**（example.com等は使用不可）
 - WordPressブロックエディタで完璧に表示されるシンプルな構造
 - 人間らしい自然な文章（機械的なリストは最小限）
 - 体験談や感情を織り交ぜた読みやすい記事
-- **記事の冒頭に「<h1>{article_title}</h1>」を必ず配置**
 
 === リサーチメモ ===
 {material}
 
-WordPressブロックエディタ向けの最適化されたHTMLのみを出力してください。
-記事の最初は必ず「<h1>{article_title}</h1>」から始めてください。"""
+必ずh1タグで始まる、WordPressブロックエディタ向けの最適化されたHTMLのみを出力してください。"""
 
     try:
         print(f"[INFO] Generating HTML article with {model}...")
@@ -162,15 +144,6 @@ WordPressブロックエディタ向けの最適化されたHTMLのみを出力�
     except OpenAIError as e:
         print(f"[ERROR] OpenAI API error: {e}")
         raise SystemExit(f"Failed to generate article: {e}")
-
-
-def count_japanese_chars(text: str) -> int:
-    """日本語文字数をカウント（ひらがな・カタカナ・漢字・数字・英字・記号等）"""
-    # HTML タグを除去してから文字数カウント
-    clean_text = re.sub(r'<[^>]+>', '', text)
-    return len(clean_text.replace(" ", "").replace("\n", ""))
-
-
 
 
 def improve_article_length(html_content: str, target_chars: int, model: str) -> str:
@@ -195,7 +168,7 @@ def improve_article_length(html_content: str, target_chars: int, model: str) -> 
 - 既存の内容の意味や構造は変更しない
 - 具体例、詳細説明、体験談を追加して自然に文字数を増やす
 - WordPressブロックエディタ対応のシンプルなHTML構造を維持
-- p、h2、h3、h4、img、strong、em、ul、ol、li、blockquoteタグのみ使用
+- p、h2、h3、h4、img、strong、em、ul、ol、liタグのみ使用
 - 機械的なリストではなく、流れるような文章で拡充
 
 現在{current_chars}文字から{target_chars}文字に拡充してください。"""
@@ -229,6 +202,7 @@ def improve_article_length(html_content: str, target_chars: int, model: str) -> 
 
 def fix_broken_html_tags(html_content: str) -> str:
     """破損したHTMLタグを自動修正する"""
+    import re
     
     # 破損したstrongタグを修正
     html_content = re.sub(r'</strong、', '</strong>、', html_content)
@@ -247,6 +221,90 @@ def fix_broken_html_tags(html_content: str) -> str:
     html_content = re.sub(r'</h([1-6])。', r'</h\1>。', html_content)
     
     return html_content
+
+
+def review_html_article(html_content: str, model: str) -> tuple[List[str], str]:
+    """HTMLコンテンツをレビューし、問題点と修正版を返す"""
+    
+    if OpenAI is None:
+        print("[WARNING] OpenAI package not available, skipping review")
+        return [], html_content
+    
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("[WARNING] OPENAI_API_KEY not set, skipping review")
+        return [], html_content
+    
+    client = OpenAI(api_key=api_key)
+    
+    system_prompt = """あなたは日本語のHTML記事編集者です。WordPressブロックエディタ向けのHTML記事の品質をチェックし、問題点を指摘して改善版を提供します。
+
+【レビュー観点】
+- 文章の自然性と読みやすさ
+- 数値や事例の信頼性（個別事例か一般的傾向かの明記）
+- 断定的すぎる表現の緩和
+- 具体例や前提条件の明記
+- 法令や規制への言及の正確性
+- 機密情報・個人情報の取り扱い注意喚起
+- AIの幻覚（hallucination）や出典不明確性の警告
+- 専門家相談の推奨
+- HTML構造の最適性（WordPressブロック対応）
+
+【重要：HTML構造について】
+- 記事は必ずh1タグで始まること（WordPressタイトル抽出のため）
+- 既存のh1タグがある場合は必ず保持すること
+- h1タグがない場合は適切なタイトルのh1タグを追加すること
+- 見出しの階層構造（h1→h2→h3）を適切に維持すること
+- blockquoteタグは使用禁止（WordPressブロック互換性問題のため）
+- imgタグ内のsrcにはプレースホルダーURL（example.com等）は使用禁止
+- 実際の画像ファイルパスを使用するか、画像は別途自動生成される場合は省略
+
+【出力形式】
+必ずJSON形式で以下の2フィールドのみを含めてください：
+- "issues": 問題点のリスト（文字列配列）
+- "revised_html": 修正されたHTML（文字列、必ずh1タグで開始）"""
+
+    user_prompt = f"""以下のHTML記事をレビューし、問題点を列挙して修正版を提示してください：
+
+{html_content}
+
+問題点と修正版をJSON形式で返してください。HTMLの構造は維持し、WordPressブロックエディタ対応を保ってください。"""
+
+    try:
+        print(f"[INFO] Reviewing HTML article with {model}...")
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_completion_tokens=MAX_OUTPUT_TOKENS,
+        )
+        
+        review_text = response.choices[0].message.content.strip()
+        print(f"[INFO] Review completed: {len(review_text)} characters")
+        
+        # JSONパース
+        try:
+            data = json.loads(review_text)
+            issues = data.get("issues", [])
+            revised_html = data.get("revised_html", html_content)
+            
+            if not isinstance(issues, list):
+                issues = []
+            if not isinstance(revised_html, str):
+                revised_html = html_content
+                
+            print(f"[INFO] Found {len(issues)} issues for review")
+            return issues, revised_html
+            
+        except json.JSONDecodeError as e:
+            print(f"[WARNING] Failed to parse review JSON: {e}")
+            return [], html_content
+        
+    except Exception as e:
+        print(f"[ERROR] Review failed: {e}")
+        return [], html_content
 
 
 def generate_html_article_with_retry(material: str, model: str) -> str:
@@ -286,77 +344,6 @@ def generate_html_article_with_retry(material: str, model: str) -> str:
     return fix_broken_html_tags(html_content)
 
 
-def review_html_article(html_content: str, model: str) -> tuple[list[str], str]:
-    """HTMLコンテンツをレビューし、問題点と修正版を返す"""
-    
-    if OpenAI is None:
-        return [], html_content
-    
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        return [], html_content
-    
-    client = OpenAI(api_key=api_key)
-    
-    system_prompt = """あなたは日本語のHTML記事編集者です。WordPressブロックエディタ向けのHTML記事の品質をチェックし、問題点を指摘して改善版を提供します。
-
-【レビュー観点】
-- 文章の自然性と読みやすさ
-- 数値や事例の信頼性（個別事例か一般的傾向かの明記）
-- 断定的すぎる表現の緩和
-- 具体例や前提条件の明記
-- 法令や規制への言及の正確性
-- HTML構造の最適性（WordPressブロック対応）
-
-【出力形式】
-必ずJSON形式で以下の2フィールドのみを含めてください：
-- "issues": 問題点のリスト（文字列配列）
-- "revised_html": 修正されたHTML（文字列）"""
-
-    user_prompt = f"""以下のHTML記事をレビューし、問題点を列挙して修正版を提示してください：
-
-{html_content}
-
-問題点と修正版をJSON形式で返してください。HTMLの構造は維持し、WordPressブロックエディタ対応を保ってください。"""
-
-    try:
-        print(f"[INFO] Reviewing HTML article with {model}...")
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_completion_tokens=MAX_OUTPUT_TOKENS,
-        )
-        
-        review_text = response.choices[0].message.content.strip()
-        print(f"[INFO] Review completed: {len(review_text)} characters")
-        
-        # JSONパース
-        import json
-        try:
-            data = json.loads(review_text)
-            issues = data.get("issues", [])
-            revised_html = data.get("revised_html", html_content)
-            
-            if not isinstance(issues, list):
-                issues = []
-            if not isinstance(revised_html, str):
-                revised_html = html_content
-                
-            print(f"[INFO] Found {len(issues)} issues for review")
-            return issues, revised_html
-            
-        except json.JSONDecodeError as e:
-            print(f"[WARNING] Failed to parse review JSON: {e}")
-            return [], html_content
-        
-    except Exception as e:
-        print(f"[ERROR] Review failed: {e}")
-        return [], html_content
-
-
 def main() -> None:
     args = parse_args()
     
@@ -387,11 +374,14 @@ def main() -> None:
         
         # Review the generated article
         print(f"[INFO] Starting article review...")
-        issues, revised_html = review_html_article(html_content, args.model)
+        issues, revised_html = review_html_article(html_content, REVIEW_MODEL)
         
-        # Use revised version if available
+        # Use revised version if available and different
         final_html = revised_html if revised_html != html_content else html_content
-        final_html = fix_broken_html_tags(final_html)
+        if revised_html != html_content:
+            print(f"[INFO] Article was revised based on review feedback")
+        else:
+            print(f"[INFO] No revisions needed or review skipped")
         
         # Write the HTML file
         print(f"[INFO] Writing HTML article to: {args.output}")
@@ -403,12 +393,12 @@ def main() -> None:
             f"# Review Report for {args.output.name}",
             "",
             f"- Generated: {timestamp}",
-            f"- Model: {args.model}",
+            f"- Model: {REVIEW_MODEL}",
             "",
+            "## Issues"
         ]
         
         if issues:
-            report_lines.append("## Issues")
             for idx, issue in enumerate(issues, 1):
                 report_lines.append(f"{idx}. {issue}")
         else:
@@ -422,8 +412,9 @@ def main() -> None:
         print(f"[INFO] Final character count: {final_char_count}")
         print(f"[INFO] Output file: {args.output}")
         
+        # Display review results
         if issues:
-            print(f"[INFO] Review issues detected: {len(issues)}")
+            print(f"[INFO] Review found {len(issues)} issues:")
             for idx, issue in enumerate(issues, 1):
                 print(f"  {idx}. {issue}")
         else:

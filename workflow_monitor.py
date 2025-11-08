@@ -435,7 +435,7 @@ INDEX_HTML = """<!DOCTYPE html>
         </div>
         <div id="completed-articles-section">
           <p style="margin-bottom: 1rem; color: var(--text-muted);">
-            article.md が存在するフォルダから画像生成を再開できます
+            article.html（優先）またはarticle.md が存在するフォルダから画像生成を再開できます
           </p>
           <div id="completed-articles-list">
             <div style="text-align: center; padding: 1rem;">読み込み中...</div>

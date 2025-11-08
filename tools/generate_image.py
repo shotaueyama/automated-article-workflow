@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        help="Directory where the PNG will be written. Defaults to auto-detected article images folder or `generated-images`.",
+        help="Directory where the PNG will be written. Defaults to auto-detected article images folder.",
     )
     parser.add_argument(
         "--filename",
@@ -114,7 +114,8 @@ def determine_output_dir(cli_output: str | None) -> Path:
             return articles_dir / "images"
         articles_dir = articles_dir.parent
 
-    return (REPO_ROOT / "generated-images").resolve()
+    # If not in an article directory, use current directory
+    return Path.cwd() / "images"
 
 
 if __name__ == "__main__":
