@@ -260,7 +260,7 @@ def step_deep_research(args: argparse.Namespace, log: Dict) -> int:
         args.effort,
     ]
     
-    print_api_log("REQUEST", "OpenAI o3-deep-researchでリサーチ処理を開始")
+    print_api_log("REQUEST", "OpenAI o4-mini-deep-researchでリサーチ処理を開始")
     code, stdout, stderr = run_command(cmd, REPO_ROOT)
     detail = stdout.strip()
     

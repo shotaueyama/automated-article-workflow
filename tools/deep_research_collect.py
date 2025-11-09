@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("query", help="Research topic or question to investigate.")
     parser.add_argument(
         "--model",
-        default="o3-deep-research",
+        default="o4-mini-deep-research",
         help="OpenAI model to use (default: %(default)s).",
     )
     parser.add_argument(
@@ -98,7 +98,33 @@ def main() -> int:
     try:
         response = client.responses.create(**request_kwargs)
     except OpenAIError as exc:
-        raise SystemExit(f"DeepResearch API call failed: {exc!s}")
+        print(f"DeepResearch API call failed: {exc!s}")
+        print("Falling back to search-based research...")
+        
+        # フォールバック: search_research_collect.pyを呼び出し
+        import subprocess
+        import sys
+        
+        try:
+            fallback_cmd = [
+                sys.executable, 
+                "tools/search_research_collect.py", 
+                args.query,
+                "--search-model", "gpt-4o-search-preview",
+                "--report-model", "gpt-4o-mini"
+            ]
+            
+            result = subprocess.run(fallback_cmd, capture_output=True, text=True, cwd=".")
+            if result.returncode == 0:
+                print("✅ Fallback search-based research completed successfully!")
+                print(result.stdout)
+                return 0
+            else:
+                print(f"❌ Fallback research also failed: {result.stderr}")
+                raise SystemExit(f"Both DeepResearch and fallback failed. Last error: {result.stderr}")
+                
+        except Exception as fallback_exc:
+            raise SystemExit(f"DeepResearch failed: {exc!s}. Fallback also failed: {fallback_exc!s}")
 
     text_output = extract_text(response)
     timestamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")

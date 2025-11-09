@@ -109,7 +109,7 @@ python run_workflow.py --resume-from-images articles/1
 
 ## ワークフロー詳細
 
-1. **ディープリサーチ** - OpenAI o3-deep-researchによるテーマ調査（material.md生成）
+1. **ディープリサーチ** - OpenAI o4-mini-deep-researchによるテーマ調査（material.md生成）
 2. **HTML記事生成** - GPT-5 mini による自然な日本語記事作成（article.html生成）
 3. **品質レビュー** - GPT-5 mini による記事の自動レビュー・修正
 4. **画像生成** - DALL-E 3による多様な画像作成と記事への自動挿入

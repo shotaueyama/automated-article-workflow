@@ -42,7 +42,7 @@ class WordPressUploader:
         self._categories_cache: Optional[List[dict]] = None
 
     def _request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
-        url = f"{self.base_url}{endpoint}"
+        url = f"{self.base_url}wp-json/wp/v2{endpoint}"
         response = self.session.request(method, url, **kwargs)
         try:
             response.raise_for_status()

@@ -30,18 +30,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="gpt-image-1",
+        default="dall-e-3",
         help="Image model to use. Defaults to %(default)s.",
     )
     parser.add_argument(
         "--size",
-        default="1536x1024",
-        help="Image size accepted by the API, e.g. 1024x1024, 1536x1024, or 1024x1536.",
+        default="1792x1024",
+        help="Image size accepted by the API, e.g. 1024x1024, 1792x1024, or 1024x1792.",
     )
     parser.add_argument(
         "--quality",
         choices=("standard", "high"),
-        default="high",
+        default="standard",
         help="Image quality. `high` yields better results but costs more.",
     )
     parser.add_argument(
@@ -70,6 +70,7 @@ def main() -> int:
             size=args.size,
             quality=args.quality,
             n=1,
+            response_format="b64_json"  # 明示的にbase64形式を要求
         )
     except OpenAIError as exc:
         print(f"Image generation failed: {exc}", file=sys.stderr)
@@ -79,8 +80,24 @@ def main() -> int:
         print("Image generation returned no results.", file=sys.stderr)
         return 1
 
-    image_b64 = response.data[0].b64_json
-    if not image_b64:
+    # b64_jsonが利用できない場合のフォールバック処理
+    image_data = response.data[0]
+    image_b64 = None
+    image_bytes = None
+    
+    if hasattr(image_data, 'b64_json') and image_data.b64_json:
+        image_b64 = image_data.b64_json
+    elif hasattr(image_data, 'url'):
+        # URLから画像をダウンロード
+        import requests
+        try:
+            img_response = requests.get(image_data.url, timeout=30)
+            img_response.raise_for_status()
+            image_bytes = img_response.content
+        except Exception as e:
+            print(f"Failed to download image from URL: {e}", file=sys.stderr)
+            return 1
+    else:
         print("API response did not contain image data.", file=sys.stderr)
         return 1
 
@@ -98,7 +115,12 @@ def main() -> int:
         filename = f"{timestamp}-{sanitized}"
     output_path = output_dir / f"{filename}.png"
 
-    output_path.write_bytes(base64.b64decode(image_b64))
+    # 画像データを保存
+    if image_b64:
+        output_path.write_bytes(base64.b64decode(image_b64))
+    else:
+        output_path.write_bytes(image_bytes)
+    
     print(f"Image saved to {output_path}")
     return 0
 

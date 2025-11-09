@@ -62,23 +62,29 @@ step_generate_images(2, log)
 ### 3.1 DALL-E 3 設定
 
 - **モデル**: `dall-e-3`
-- **画像サイズ**: `1536x1024` (16:9アスペクト比)
+- **画像サイズ**: `1792x1024` (16:9アスペクト比)
 - **品質**: `standard` (コストと品質のバランス)
 - **プロンプト言語**: 英語必須（日本語は文字化けするため自動翻訳）
 
 ### 3.2 プロンプト生成システム
 
-画像生成は2段階で実行：
+画像生成はコマンドラインツールで実行：
 
-1. **プロンプト生成**: ChatGPT（GPT-5 mini）が日本語見出しから英語プロンプトを生成
-2. **重複チェック**: 既存プロンプトとの類似性を確認、必要に応じて再生成
-3. **画像生成**: DALL-E 3で最終プロンプトから画像を生成
+1. **見出し抽出**: `run_workflow.py` の `extract_headings()` でHTML/Markdownからh2タグを抽出
+2. **コマンド実行**: `tools/generate_image.py` を各見出しごとに呼び出し
+3. **画像生成**: DALL-E 3で直接日本語見出しから画像を生成
+4. **ファイル保存**: `articles/<id>/images/` にタイムスタンプ付きで保存
 
 ### 3.3 プロンプト生成例
 
 **入力見出し**: "月5万円を実現する収益構造の骨組み（考え方の例）"
 
-**生成プロンプト**: "A serene home office setting in the late afternoon, featuring three distinct revenue stream visualization boards on easels, displaying charts and diagrams that represent multiple income sources flowing together, with warm natural lighting and a professional yet approachable atmosphere"
+**実行コマンド**: 
+```bash
+python tools/generate_image.py "## 月5万円を実現する収益構造の骨組み（考え方の例）" \
+  --output-dir articles/2/images \
+  --filename "20251108163048-5"
+```
 
 ---
 
@@ -98,32 +104,40 @@ articles/2/images/20251108163048-5.png
 
 ## 5. HTML統合システム
 
-### 5.1 見出し抽出
+### 5.1 見出し抽出（実装版）
 
 ```python
 def extract_headings(article_path: Path) -> List[str]:
     """HTMLまたはMarkdownから見出しを抽出"""
-    content = article_path.read_text()
-    if article_path.suffix == '.html':
-        # HTML: h2, h3, h4タグから抽出
-        soup = BeautifulSoup(content, 'html.parser')
-        headings = [tag.get_text().strip() for tag in soup.find_all(['h2', 'h3', 'h4'])]
+    headings: List[str] = []
+    content = article_path.read_text(encoding="utf-8")
+    
+    # HTMLファイルの場合はHTMLタグから見出しを抽出
+    if article_path.suffix == ".html":
+        import re
+        h2_matches = re.findall(r'<h2>(.*?)</h2>', content)
+        for heading in h2_matches:
+            headings.append(f"## {heading}")
     else:
-        # Markdown: ##, ###, ####から抽出  
-        headings = [line.strip('#').strip() for line in content.split('\n') 
-                   if line.startswith('##') and not line.startswith('#####')]
+        # Markdownファイルの場合は従来の方法
+        for line in content.splitlines():
+            line = line.rstrip()
+            if line.startswith("## "):
+                headings.append(line.strip())
     return headings
 ```
 
-### 5.2 画像自動挿入
+### 5.2 画像自動挿入（手動適用）
 
-生成された画像は対応する見出し直後に自動挿入：
+現在の実装では、画像生成後に手動でHTMLに挿入する必要があります：
 
 ```html
 <h2>月5万円を実現する収益構造の骨組み（考え方の例）</h2>
 <img src="images/20251108163048-5.png" alt="月5万円を実現する収益構造の骨組み（考え方の例）のイメージ" />
 <p>重要なのは「複数の小さな収入源を組み合わせること」です...</p>
 ```
+
+> **注意**: 自動挿入機能は未実装。現在は手動で`<img>`タグを追加する必要があります。
 
 ---
 
@@ -145,25 +159,29 @@ def extract_headings(article_path: Path) -> List[str]:
 
 ---
 
-## 7. プロンプト多様化システム
+## 7. 画像生成コマンドラインオプション
 
-### 7.1 重複チェック機能
+### 7.1 基本オプション
 
-```python
-def check_prompt_similarity(new_prompt: str, existing_prompts: List[str]) -> bool:
-    """プロンプトの類似性をチェック（簡易版）"""
-    for existing in existing_prompts:
-        if calculate_similarity(new_prompt, existing) > 0.7:
-            return True  # 類似度が高い
-    return False
+```bash
+python tools/generate_image.py "見出しテキスト" \
+  --model dall-e-3 \
+  --size 1792x1024 \
+  --quality standard \
+  --output-dir articles/2/images \
+  --filename "ファイル名"
 ```
 
-### 7.2 多様化戦略
+### 7.2 サイズオプション
 
-- **シーン設定**: オフィス、カフェ、自然、都市など多様な背景
-- **視点変更**: 俯瞰、クローズアップ、横からのアングル
-- **時間帯**: 朝、昼、夜、夕方で雰囲気を変更
-- **スタイル**: 写実的、イラスト調、インフォグラフィック
+- **1792x1024**: 横長（16:9アスペクト比）
+- **1024x1792**: 縦長（9:16アスペクト比）
+- **1024x1024**: 正方形（1:1アスペクト比）
+
+### 7.3 品質設定
+
+- **standard**: 標準品質（コスト効率重視）
+- **high**: 高品質（高額だが高精細）
 
 ---
 
@@ -201,13 +219,13 @@ for attempt in range(MAX_RETRIES):
 
 ```bash
 # 単体画像生成（開発・デバッグ用）
-python tools/generate_image.py "A serene office workspace at sunset" \
-  --size 1536x1024 \
+python tools/generate_image.py "見出しテキスト" \
+  --size 1792x1024 \
   --output-dir articles/2/images \
   --filename manual-test
 ```
 
-> **注意**: 手動実行は開発用途のみ。本番環境では統合ワークフローを使用してください。
+> **注意**: 手動実行でも実用的に使用可能。統合ワークフローでは `step_generate_images()` がこのツールを内部的に呼び出します。
 
 ---
 
@@ -221,7 +239,7 @@ python tools/generate_image.py "A serene office workspace at sunset" \
 
 ### 10.2 コスト管理
 
-- **DALL-E 3料金**: `1536x1024`で$0.080/枚
+- **DALL-E 3料金**: `1792x1024`で$0.080/枚（standard品質）
 - **6枚生成**: 約$0.48/記事
 - **月間予算**: 100記事で約$48
 
@@ -233,11 +251,17 @@ python tools/generate_image.py "A serene office workspace at sunset" \
 
 ---
 
-## 11. 今後の拡張予定
+## 11. 現在の制限と今後の改善点
 
-- **スタイル指定**: 記事ごとに画像スタイルを指定可能に
-- **一括再生成**: 既存記事の画像を一括で再生成
-- **カスタムプロンプト**: ユーザー定義のプロンプトテンプレート
+### 現在の制限
+- **手動挿入**: 生成後の画像をHTMLに手動で挿入する必要がある
+- **h2のみ対応**: h3, h4などのサブ見出しは現在非対応
+- **プロンプト多様化**: 重複チェックなどの高度な機能は未実装
+
+### 今後の改善予定
+- **自動挿入**: HTMLに画像を自動挿入する機能
+- **サブ見出し対応**: h3, h4タグからも画像生成
+- **プロンプト高度化**: コンテキストを考慮した多様なプロンプト生成
 - **画像圧縮**: WebP変換による高速化とサイズ削減
 
 ---

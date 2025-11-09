@@ -34,6 +34,7 @@ logs/
 # Generated content (sensitive data)
 generated-images/
 articles/*/
+docs/
 
 # Temporary files
 *.tmp
