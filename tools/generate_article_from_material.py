@@ -24,12 +24,16 @@ except ImportError:  # openai パッケージが無い環境向けのフォー�
 
 DEFAULT_MATERIAL_PATH = Path("articles/material.md")
 DEFAULT_OUTPUT_PATH = Path("articles/generated_article.html")
-DEFAULT_MODEL = "gpt-5-mini-2025-08-07"
+# Get model settings from environment variables with fallbacks
+DEFAULT_MODEL = os.environ.get("PRIMARY_MODEL", "gpt-5-mini-2025-08-07")
+FALLBACK_MODEL = os.environ.get("FALLBACK_MODEL", "gpt-5-nano")
+REVIEW_MODEL = os.environ.get("PRIMARY_REVIEW_MODEL", "gpt-5-mini-2025-08-07")
+REVIEW_FALLBACK_MODEL = os.environ.get("FALLBACK_REVIEW_MODEL", "gpt-5-nano")
+
 MIN_CHAR_COUNT = 3000
 MAX_CHAR_COUNT = 4000
 MAX_ATTEMPTS = 5
 MAX_OUTPUT_TOKENS = 128_000
-REVIEW_MODEL = "gpt-5-mini-2025-08-07"
 
 
 def parse_args() -> argparse.Namespace:
@@ -81,6 +85,37 @@ def extract_title_from_material(material: str) -> str:
                 return title.split(' – ')[0].strip()
             return title
     return "記事タイトル"  # デフォルト
+
+
+def try_model_with_fallback(client, model: str, fallback_model: str, messages: list, **kwargs) -> any:
+    """モデル使用を試行し、失敗時にフォールバックモデルを使用"""
+    try:
+        print(f"[INFO] Attempting to use model: {model}")
+        return client.chat.completions.create(model=model, messages=messages, **kwargs)
+    except Exception as e:
+        error_str = str(e).lower()
+        # より幅幅いエラーパターンでフォールバックをトリガー
+        should_fallback = any([
+            "model" in error_str,
+            "not found" in error_str, 
+            "unavailable" in error_str,
+            "permission" in error_str,
+            "quota" in error_str,  # クォータ超過
+            "insufficient_quota" in error_str,
+            "rate_limit" in error_str,
+            "429" in error_str  # HTTP 429 Too Many Requests
+        ])
+        
+        if should_fallback:
+            print(f"[WARNING] Model {model} failed: {e}")
+            print(f"[INFO] Falling back to model: {fallback_model}")
+            try:
+                return client.chat.completions.create(model=fallback_model, messages=messages, **kwargs)
+            except Exception as fallback_e:
+                print(f"[ERROR] Fallback model {fallback_model} also failed: {fallback_e}")
+                raise fallback_e
+        else:
+            raise e
 
 
 def generate_article_with_openai(material: str, model: str) -> str:
@@ -145,8 +180,10 @@ WordPressブロックエディタ向けの最適化されたHTMLのみを出力�
 
     try:
         print(f"[INFO] Generating HTML article with {model}...")
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=model,
+            fallback_model=FALLBACK_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -159,8 +196,8 @@ WordPressブロックエディタ向けの最適化されたHTMLのみを出力�
         
         return html_content
         
-    except OpenAIError as e:
-        print(f"[ERROR] OpenAI API error: {e}")
+    except Exception as e:
+        print(f"[ERROR] Failed to generate article: {e}")
         raise SystemExit(f"Failed to generate article: {e}")
 
 
@@ -208,8 +245,10 @@ def improve_article_length(html_content: str, target_chars: int, model: str) -> 
 
     try:
         print(f"[INFO] Improving article length from {current_chars} to {target_chars} characters...")
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=model,
+            fallback_model=FALLBACK_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -222,7 +261,7 @@ def improve_article_length(html_content: str, target_chars: int, model: str) -> 
         
         return improved_html
         
-    except OpenAIError as e:
+    except Exception as e:
         print(f"[ERROR] Failed to improve article length: {e}")
         return html_content
 
@@ -321,8 +360,10 @@ def review_html_article(html_content: str, model: str) -> tuple[list[str], str]:
 
     try:
         print(f"[INFO] Reviewing HTML article with {model}...")
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=model,
+            fallback_model=REVIEW_FALLBACK_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}

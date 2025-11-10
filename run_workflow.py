@@ -145,13 +145,21 @@ def generate_image_prompt(heading: str, previous_prompts: List[str] = None) -> s
     
     # プロンプト生成
     system_prompt = (
-        "You are an expert at creating diverse, professional image prompts for DALL-E 3. "
+        "You are an expert at creating diverse, professional image prompts for DALL-E 3 in cute 3D animation style. "
         "Create unique, visually distinct prompts that avoid repetition. "
-        "Each prompt should be in English, professional photography style, 16:9 aspect ratio, no text overlay. "
-        "Focus on different compositions, colors, lighting, and visual elements."
+        "Each prompt should be in English, featuring: "
+        "- Simple, minimalist 3D scenes with few objects "
+        "- 3D rendered characters with rounded, cute features and large expressive eyes "
+        "- Clean, uncluttered compositions with plenty of white space "
+        "- Soft, bouncy textures and smooth plastic-like surfaces "
+        "- Bright, saturated colors with warm ambient lighting "
+        "- Cartoon-style proportions but professional business context "
+        "- Cheerful, friendly atmosphere similar to animated movies "
+        "- 16:9 aspect ratio, no text overlay "
+        "Focus on simplicity and clarity with minimal objects per scene."
     )
     
-    user_prompt = f"Create a unique image prompt for the heading: '{heading}'"
+    user_prompt = f"Create a unique image prompt for the heading: '{heading}'. Keep it simple and minimalist with few objects. Include keywords like 'cute 3D characters', 'clean composition', 'minimal objects', 'plenty of white space', 'simple background' to achieve a clean, uncluttered look."
     
     if previous_prompts:
         user_prompt += f"\n\nAvoid similarity to these previous prompts:\n{chr(10).join(previous_prompts)}"
@@ -224,27 +232,29 @@ def is_prompt_similar(new_prompt: str, previous_prompts: List[str], client: Open
 
 
 def generate_fallback_prompt(heading: str) -> str:
-    """フォールバック用のプロンプト生成（既存ロジック）"""
+    """フォールバック用のプロンプト生成（シンプル可愛い3Dアニメーションスタイル）"""
+    base_style = ", simple minimalist cute 3D rendered animation style, few objects, clean composition, rounded characters, large expressive eyes, soft textures, bright colors, warm lighting, plenty of white space, no text overlay"
+    
     if "AI" in heading or "人工知能" in heading:
-        return "A modern AI technology workspace with computers, neural networks visualization, and futuristic digital interfaces, professional photography style, no text overlay"
+        return f"Simple AI workspace with one computer and a friendly robot character{base_style}"
     elif "フリーランス" in heading or "働き方" in heading:
-        return "A productive home office setup with laptop, coffee, and organized workspace representing freelance lifestyle, professional photography style, no text overlay"
+        return f"Clean home office with one laptop and a cute character working{base_style}"
     elif "自動化" in heading or "効率" in heading:
-        return "Digital automation concept with robotic hands typing on keyboard, gears and workflow diagrams, professional photography style, no text overlay"
+        return f"Simple automation scene with gears and one friendly robot{base_style}"
     elif "収益" in heading or "収入" in heading or "稼" in heading:
-        return "Professional business growth concept with charts, graphs, and financial success symbols, professional photography style, no text overlay"
+        return f"Clean business growth scene with simple chart and happy character{base_style}"
     elif "ツール" in heading or "アプリ" in heading:
-        return "Modern software development workspace with multiple screens showing applications and tools, professional photography style, no text overlay"
+        return f"Minimalist workspace with one screen showing simple app interface{base_style}"
     elif "学習" in heading or "スキル" in heading:
-        return "Online learning environment with books, laptop, and educational materials in modern setting, professional photography style, no text overlay"
+        return f"Simple learning scene with book, laptop and cute student character{base_style}"
     elif "マーケティング" in heading:
-        return "Digital marketing workspace with analytics, social media, and promotional materials, professional photography style, no text overlay"
+        return f"Clean marketing workspace with simple analytics chart{base_style}"
     elif "クライアント" in heading or "顧客" in heading:
-        return "Professional business meeting environment with handshakes and collaboration, professional photography style, no text overlay"
+        return f"Simple meeting scene with two friendly characters shaking hands{base_style}"
     elif "時間" in heading or "管理" in heading:
-        return "Time management concept with clocks, calendars, and organized desk setup, professional photography style, no text overlay"
+        return f"Minimalist time management with one clock and organized desk{base_style}"
     else:
-        return "Professional business concept related to modern technology and productivity, professional photography style, no text overlay"
+        return f"Simple business scene with friendly character and minimal objects{base_style}"
 
 
 def step_deep_research(args: argparse.Namespace, log: Dict) -> int:
@@ -402,7 +412,16 @@ def step_generate_images(article_id: int, log: Dict) -> None:
     images_dir = article_path.parent / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
 
+    # 既存の画像数をチェック
+    existing_images = list(images_dir.glob("*.png"))
+    print_status(f"📁 既存画像: {len(existing_images)}個, 必要: {len(headings)}個")
+
     for i, heading in enumerate(headings, 1):
+        # 既存の画像が十分にある場合はスキップ
+        if len(existing_images) >= i:
+            print_status(f"⏭️  画像 {i}/{len(headings)}: {heading[:30]}... (既存画像使用)")
+            continue
+            
         slug = slugify(heading)
         filename = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{slug}"
         image_path = images_dir / f"{filename}.png"
@@ -422,6 +441,8 @@ def step_generate_images(article_id: int, log: Dict) -> None:
             str(image_path.parent.relative_to(REPO_ROOT)),
             "--filename",
             filename,
+            "--retry-attempts",
+            "3",
         ]
         
         print_api_log("REQUEST", f"DALL-E 3で画像生成: {heading[:20]}...")

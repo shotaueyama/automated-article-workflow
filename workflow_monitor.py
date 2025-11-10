@@ -368,6 +368,60 @@ INDEX_HTML = """<!DOCTYPE html>
       padding-left: 0.75rem;
     }
 
+    .articles-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+
+    .articles-table th,
+    .articles-table td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .articles-table th {
+      background: var(--surface-2);
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: var(--text);
+      border-bottom: 2px solid var(--border);
+    }
+
+    .articles-table td {
+      font-size: 0.875rem;
+    }
+
+    .articles-table tr:hover {
+      background: var(--surface-2);
+    }
+
+    .articles-table .id-col {
+      width: 10%;
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    .articles-table .title-col {
+      width: 40%;
+      color: var(--text);
+    }
+
+    .articles-table .status-col {
+      width: 15%;
+    }
+
+    .articles-table .date-col {
+      width: 20%;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    .articles-table .actions-col {
+      width: 15%;
+    }
+
     .btn-warning {
       background: var(--warning);
       color: white;
@@ -417,27 +471,13 @@ INDEX_HTML = """<!DOCTYPE html>
       
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title">📁 記事再生成</h2>
+          <h2 class="card-title">📋 記事一覧</h2>
         </div>
-        <div id="materials-section">
+        <div id="articles-table-section">
           <p style="margin-bottom: 1rem; color: var(--text-muted);">
-            material.md のみ存在するフォルダから記事生成を再開できます
+            生成済みの記事一覧を表示しています
           </p>
-          <div id="materials-list">
-            <div style="text-align: center; padding: 1rem;">読み込み中...</div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">🎨 画像生成再開</h2>
-        </div>
-        <div id="completed-articles-section">
-          <p style="margin-bottom: 1rem; color: var(--text-muted);">
-            article.html（優先）またはarticle.md が存在するフォルダから画像生成を再開できます
-          </p>
-          <div id="completed-articles-list">
+          <div id="articles-table">
             <div style="text-align: center; padding: 1rem;">読み込み中...</div>
           </div>
         </div>
@@ -702,10 +742,10 @@ INDEX_HTML = """<!DOCTYPE html>
     }
 
     fetchRuns();
-    fetchMaterials();
-    fetchCompletedArticles();
+    fetchArticles();
     // パフォーマンス向上のため30秒間隔に変更
     setInterval(fetchRuns, 30000);
+    setInterval(fetchArticles, 60000);
     
     // 初期状態でログ配信停止メッセージを表示
     const logBox = document.getElementById("log-output");
@@ -717,115 +757,81 @@ INDEX_HTML = """<!DOCTYPE html>
 
     document.getElementById("start-workflow-btn").addEventListener("click", startWorkflow);
 
-    async function fetchMaterials() {
+    async function fetchArticles() {
       try {
-        const res = await fetch(apiBase + "/articles/materials");
-        if (!res.ok) throw new Error("Failed to fetch materials");
-        const materials = await res.json();
-        renderMaterials(materials);
-      } catch (err) {
-        document.getElementById("materials-list").innerHTML = 
-          '<div style="color: var(--danger); text-align: center; padding: 1rem;">マテリアル取得に失敗しました</div>';
-      }
-    }
-
-    async function fetchCompletedArticles() {
-      try {
-        const res = await fetch(apiBase + "/articles/completed");
-        if (!res.ok) throw new Error("Failed to fetch completed articles");
+        const res = await fetch(apiBase + "/articles");
+        if (!res.ok) throw new Error("Failed to fetch articles");
         const articles = await res.json();
-        renderCompletedArticles(articles);
+        renderArticlesTable(articles);
       } catch (err) {
-        document.getElementById("completed-articles-list").innerHTML = 
-          '<div style="color: var(--danger); text-align: center; padding: 1rem;">完成記事取得に失敗しました</div>';
+        document.getElementById("articles-table").innerHTML = 
+          '<div style="color: var(--danger); text-align: center; padding: 1rem;">記事一覧取得に失敗しました</div>';
       }
     }
 
-    function renderMaterials(materials) {
-      const container = document.getElementById("materials-list");
-      
-      if (materials.length === 0) {
-        container.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-state-icon">📁</div>
-            <p>material.mdのみ存在するフォルダはありません</p>
-          </div>
-        `;
-        return;
-      }
-
-      const fragment = document.createDocumentFragment();
-      
-      for (const material of materials) {
-        const card = document.createElement("div");
-        card.className = "material-card";
-        
-        const escapeHtml = (text) => {
-          const div = document.createElement('div');
-          div.textContent = text;
-          return div.innerHTML;
-        };
-        
-        card.innerHTML = `
-          <div class="material-header">
-            <span class="material-id">記事 ${material.article_id}</span>
-            <button 
-              onclick="resumeWorkflow(${material.article_id})" 
-              class="btn btn-sm btn-primary">
-              🔄 再生成
-            </button>
-          </div>
-          <div class="material-preview">${escapeHtml(material.material_preview)}</div>
-        `;
-        fragment.appendChild(card);
-      }
-      
-      container.innerHTML = "";
-      container.appendChild(fragment);
-    }
-
-    function renderCompletedArticles(articles) {
-      const container = document.getElementById("completed-articles-list");
+    function renderArticlesTable(articles) {
+      const container = document.getElementById("articles-table");
       
       if (articles.length === 0) {
         container.innerHTML = `
           <div class="empty-state">
-            <div class="empty-state-icon">🎨</div>
-            <p>article.mdが存在するフォルダはありません</p>
+            <div class="empty-state-icon">📋</div>
+            <p>まだ記事がありません</p>
           </div>
         `;
         return;
       }
 
-      const fragment = document.createDocumentFragment();
+      const escapeHtml = (text) => {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      };
       
-      for (const article of articles) {
-        const card = document.createElement("div");
-        card.className = "article-card";
-        
-        const escapeHtml = (text) => {
-          const div = document.createElement('div');
-          div.textContent = text;
-          return div.innerHTML;
-        };
-        
-        card.innerHTML = `
-          <div class="article-header">
-            <span class="article-id">記事 ${article.article_id}</span>
-            <button 
-              onclick="resumeFromImages(${article.article_id})" 
-              class="btn btn-sm btn-warning">
-              🎨 画像生成再開
-            </button>
-          </div>
-          <div class="article-title">${escapeHtml(article.title)}</div>
-          <div class="article-preview">${escapeHtml(article.article_preview)}</div>
-        `;
-        fragment.appendChild(card);
-      }
+      const tableHTML = `
+        <table class="articles-table">
+          <thead>
+            <tr>
+              <th class="id-col">ID</th>
+              <th class="title-col">タイトル</th>
+              <th class="status-col">状態</th>
+              <th class="date-col">作成日時</th>
+              <th class="actions-col">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${articles.map(article => {
+              const status = article.has_html ? 
+                (article.has_images ? 
+                  '<span class="status status-success">完成</span>' : 
+                  '<span class="status status-running">画像待ち</span>') : 
+                (article.has_material ? 
+                  '<span class="status status-running">記事待ち</span>' : 
+                  '<span class="status status-failure">未開始</span>');
+              
+              const actions = [];
+              if (article.has_material && !article.has_html) {
+                actions.push(`<button onclick="resumeWorkflow(${article.article_id})" class="btn btn-sm btn-primary">🔄 記事生成</button>`);
+              }
+              if (article.has_html && !article.has_images) {
+                actions.push(`<button onclick="resumeFromImages(${article.article_id})" class="btn btn-sm btn-warning">🎨 画像生成</button>`);
+              }
+              
+              return `
+                <tr>
+                  <td class="id-col">${article.article_id}</td>
+                  <td class="title-col">${escapeHtml(article.title || 'タイトル未設定')}</td>
+                  <td class="status-col">${status}</td>
+                  <td class="date-col">${escapeHtml(article.date_created || '-')}</td>
+                  <td class="actions-col">${actions.join(' ')}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
       
-      container.innerHTML = "";
-      container.appendChild(fragment);
+      container.innerHTML = tableHTML;
     }
 
     async function resumeWorkflow(articleId) {
@@ -1030,22 +1036,12 @@ async def api_workflow_run(request: dict):
         return res.json()
 
 
-@app.get("/api/articles/completed")
-async def api_completed():
+@app.get("/api/articles")
+async def api_articles():
     import httpx
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        res = await client.get(f"{api_base}/articles/completed")
-        res.raise_for_status()
-        return res.json()
-
-
-@app.get("/api/articles/materials")
-async def api_materials():
-    import httpx
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        res = await client.get(f"{api_base}/articles/materials")
+        res = await client.get(f"{api_base}/articles")
         res.raise_for_status()
         return res.json()
 

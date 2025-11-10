@@ -22,18 +22,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("query", help="Research topic or question to investigate.")
     parser.add_argument(
         "--search-model",
-        default="gpt-4o-search-preview",
+        default=os.environ.get("PRIMARY_SEARCH_MODEL", "gpt-4o-search-preview"),
         help="OpenAI search model to use (default: %(default)s).",
     )
     parser.add_argument(
         "--report-model",
-        default="gpt-5-mini",
+        default=os.environ.get("PRIMARY_RESEARCH_MODEL", "gpt-5-mini"),
         help="Model for report generation (default: %(default)s).",
     )
     parser.add_argument(
         "--strategy-model",
-        default="gpt-5-mini",
+        default=os.environ.get("PRIMARY_STRATEGY_MODEL", "gpt-5-mini"),
         help="Model for research strategy planning (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--fallback-model",
+        default=os.environ.get("FALLBACK_RESEARCH_MODEL", "gpt-5-nano"),
+        help="Fallback model when primary models fail (default: %(default)s).",
     )
     parser.add_argument(
         "--max-queries",
@@ -62,7 +67,38 @@ def next_article_dir(root: Path) -> Path:
     return target
 
 
-def get_next_section_strategy(client: OpenAI, topic: str, current_report: str, strategy_model: str, section_count: int) -> Dict[str, Any]:
+def try_model_with_fallback(client, model: str, fallback_model: str, messages: list, **kwargs) -> any:
+    """モデル使用を試行し、失敗時にフォールバックモデルを使用"""
+    try:
+        print(f"[INFO] Attempting to use model: {model}")
+        return client.chat.completions.create(model=model, messages=messages, **kwargs)
+    except Exception as e:
+        error_str = str(e).lower()
+        # より幅幅いエラーパターンでフォールバックをトリガー
+        should_fallback = any([
+            "model" in error_str,
+            "not found" in error_str, 
+            "unavailable" in error_str,
+            "permission" in error_str,
+            "quota" in error_str,  # クォータ超過
+            "insufficient_quota" in error_str,
+            "rate_limit" in error_str,
+            "429" in error_str  # HTTP 429 Too Many Requests
+        ])
+        
+        if should_fallback:
+            print(f"[WARNING] Model {model} failed: {e}")
+            print(f"[INFO] Falling back to model: {fallback_model}")
+            try:
+                return client.chat.completions.create(model=fallback_model, messages=messages, **kwargs)
+            except Exception as fallback_e:
+                print(f"[ERROR] Fallback model {fallback_model} also failed: {fallback_e}")
+                raise fallback_e
+        else:
+            raise e
+
+
+def get_next_section_strategy(client: OpenAI, topic: str, current_report: str, strategy_model: str, fallback_model: str, section_count: int) -> Dict[str, Any]:
     """現在のレポート内容を踏まえて、次に調査すべきセクションを戦略的に決定"""
     
     system_prompt = f"""あなたは戦略コンサルタントです。これまでに作成されたレポート内容を分析し、さらに価値を高めるために次に調査すべきセクションを1つ戦略的に決定してください。
@@ -114,8 +150,10 @@ def get_next_section_strategy(client: OpenAI, topic: str, current_report: str, s
   }}
 }}"""
 
-            response = client.chat.completions.create(
+            response = try_model_with_fallback(
+                client=client,
                 model=strategy_model,
+                fallback_model=fallback_model,
                 messages=[
                     {"role": "system", "content": enhanced_prompt},
                     {"role": "user", "content": f"トピック: {topic}\n\n現在のレポート内容:\n{current_report}\n\n上記を分析して、次に追加すべきセクションをJSON形式で提案してください。"}
@@ -211,8 +249,10 @@ def analyze_topic_and_create_research_plan(client: OpenAI, topic: str, strategy_
   ]
 }}"""
 
-            response = client.chat.completions.create(
+            response = try_model_with_fallback(
+                client=client,
                 model=strategy_model,
+                fallback_model=fallback_model,
                 messages=[
                     {"role": "system", "content": enhanced_prompt},
                     {"role": "user", "content": f"以下のトピックについて、包括的で価値の高いリサーチ戦略を設計してください：\n\n{topic}"}
@@ -281,8 +321,10 @@ def generate_search_queries(client: OpenAI, topic: str, search_model: str, max_q
 各カテゴリの見出しなしで、検索クエリのみを1行ずつ出力してください。"""
 
     try:
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=search_model,
+            fallback_model=fallback_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"トピック: {topic}"}
@@ -341,8 +383,10 @@ def perform_section_research(client: OpenAI, section_info: Dict[str, Any], searc
 極めて価値の高い専門的な調査レポートを作成してください。"""
 
     try:
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=search_model,
+            fallback_model=fallback_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"以下について極めて詳細に調査してください:\n\n{combined_query}"}
@@ -395,8 +439,10 @@ def perform_search_research(client: OpenAI, query: str, search_model: str) -> Di
 極めて詳細で価値の高い調査結果を提供してください。"""
 
     try:
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=search_model,
+            fallback_model=fallback_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"以下について極めて詳細に調査してください（上記の10の観点全てを網羅し、実用的で最新の情報を提供してください）: {query}"}
@@ -447,8 +493,10 @@ def add_section_to_report(client: OpenAI, topic: str, current_report: str, secti
 既存レポートを発展させて、より包括的で価値の高い内容にしてください。"""
 
     try:
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=report_model,
+            fallback_model=fallback_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
@@ -490,8 +538,10 @@ def initialize_report(client: OpenAI, topic: str, research_plan: Dict[str, Any],
 段階的に発展する高品質レポートの基盤を作成してください。"""
 
     try:
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=report_model,
+            fallback_model=fallback_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
@@ -552,8 +602,10 @@ def generate_strategic_comprehensive_report(client: OpenAI, topic: str, research
 極めて価値の高い、専門的で実用的なレポートを作成してください。"""
 
     try:
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=report_model,
+            fallback_model=fallback_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
@@ -621,8 +673,10 @@ def generate_comprehensive_report(client: OpenAI, topic: str, research_results: 
 従来の3倍以上の情報量と価値を持つ、専門性の高いレポートを作成してください。"""
 
     try:
-        response = client.chat.completions.create(
+        response = try_model_with_fallback(
+            client=client,
             model=report_model,
+            fallback_model=fallback_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
@@ -693,7 +747,7 @@ def main() -> int:
             # 2a. 次のセクション戦略を決定
             print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] 🔍 Strategy: Determining next section...")
             print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] 📡 OpenAI API REQUEST: GPT-5-mini でセクション戦略分析開始")
-            strategy = get_next_section_strategy(client, args.query, current_report, args.strategy_model, section_count)
+            strategy = get_next_section_strategy(client, args.query, current_report, args.strategy_model, args.fallback_model, section_count)
             
             if not strategy.get("should_continue", False):
                 print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] ✅ Strategy decided to stop: {strategy.get('analysis', 'Complete')}")
@@ -754,6 +808,7 @@ def main() -> int:
             "strategy_model": args.strategy_model,
             "search_model": args.search_model,
             "report_model": args.report_model,
+            "fallback_model": args.fallback_model,
             "initial_plan": initial_plan,
             "successful_sections": section_count,
             "total_iterations": len(all_sections),
